@@ -29,10 +29,15 @@ jobs:
     - name: Restore NuGet packages
       run: nuget restore MakeMeAdmin.sln
 
-    - name: Install WiX Toolset
+    - name: Add WiX Toolset to PATH
       run: |
-        choco install wixtoolset --version=3.14.1 -y
-        echo "C:\Program Files (x86)\WiX Toolset v3.14\bin" >> $env:GITHUB_PATH
+        $wixPath = "${env:ProgramFiles(x86)}\WiX Toolset v3.14\bin"
+        if (Test-Path $wixPath) {
+          echo $wixPath >> $env:GITHUB_PATH
+        } else {
+          choco install wixtoolset -y --no-progress
+          echo "${env:ProgramFiles(x86)}\WiX Toolset v3.14\bin" >> $env:GITHUB_PATH
+        }
 
     - name: Build solution
       run: msbuild MakeMeAdmin.sln /p:Configuration=${{ matrix.configuration }} /p:Platform="${{ matrix.platform }}" /t:Rebuild
