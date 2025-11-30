@@ -63,7 +63,7 @@ jobs:
 
     - name: Build WiX Setup project
       run: |
-        msbuild Setup\Setup.wixproj /p:Configuration=${{ matrix.configuration }} /p:Platform="${{ matrix.platform }}" /t:Build
+        msbuild Setup\Setup.wixproj /p:Configuration=${{ matrix.configuration }} /p:Platform="${{ matrix.platform }}" /p:SolutionName=MakeMeAdmin /t:Build
 
     - name: Upload Service executable
       uses: actions/upload-artifact@v4
