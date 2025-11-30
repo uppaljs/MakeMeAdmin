@@ -39,8 +39,13 @@ jobs:
           echo "${env:ProgramFiles(x86)}\WiX Toolset v3.14\bin" >> $env:GITHUB_PATH
         }
 
-    - name: Build solution
-      run: msbuild MakeMeAdmin.sln /p:Configuration=${{ matrix.configuration }} /p:Platform="${{ matrix.platform }}" /t:Rebuild
+    - name: Build solution (excluding Setup)
+      run: |
+        msbuild MakeMeAdmin.sln /p:Configuration=${{ matrix.configuration }} /p:Platform="${{ matrix.platform }}" /t:Build /p:BuildProjectReferences=true
+
+    - name: Build WiX Setup project
+      run: |
+        msbuild Setup/Setup.wixproj /p:Configuration=${{ matrix.configuration }} /p:Platform="${{ matrix.platform }}" /t:Build
 
     - name: Upload Service executable
       uses: actions/upload-artifact@v4
