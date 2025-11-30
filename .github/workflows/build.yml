@@ -3,6 +3,8 @@ name: Build Make Me Admin
 on:
   push:
     branches: [ master, main ]
+    tags:
+      - 'v*'
   pull_request:
     branches: [ master, main ]
   workflow_dispatch:  # Allows manual trigger from GitHub UI
@@ -13,7 +15,7 @@ jobs:
 
     strategy:
       matrix:
-        platform: [x64]
+        platform: [x86, x64]
         configuration: [Release]
 
     steps:
@@ -65,46 +67,65 @@ jobs:
       run: |
         msbuild Setup\Setup.wixproj /p:Configuration=${{ matrix.configuration }} /p:Platform="${{ matrix.platform }}" /p:SolutionName=MakeMeAdmin /t:Build
 
-    - name: Upload Service executable
+    - name: Collect and rename MSI files
+      run: |
+        $outputDir = "Setup\bin\${{ matrix.configuration }} ${{ matrix.platform }}"
+        $collectDir = "collected-msi"
+        New-Item -ItemType Directory -Force -Path $collectDir
+
+        # Find all MSI files in culture subdirectories
+        $cultures = @("da", "de", "en-us", "fr")
+        foreach ($culture in $cultures) {
+          $culturePath = Join-Path $outputDir $culture
+          if (Test-Path $culturePath) {
+            $msiFiles = Get-ChildItem -Path $culturePath -Filter "*.msi"
+            foreach ($msi in $msiFiles) {
+              # Extract version from filename (e.g., MakeMeAdmin-2.4.1-x64.msi -> 2.4.1)
+              if ($msi.Name -match "MakeMeAdmin-(\d+\.\d+\.\d+)-") {
+                $version = $matches[1]
+                $newName = "MakeMeAdmin-$version-${{ matrix.platform }}-$culture.msi"
+                Copy-Item $msi.FullName -Destination (Join-Path $collectDir $newName)
+                Write-Host "Collected: $newName"
+              }
+            }
+          }
+        }
+
+        # List collected files
+        Get-ChildItem $collectDir
+
+    - name: Upload MSI Installers
       uses: actions/upload-artifact@v4
       with:
-        name: MakeMeAdmin-Service-${{ matrix.platform }}-${{ matrix.configuration }}
-        path: Service/bin/${{ matrix.configuration }} ${{ matrix.platform }}/
+        name: MakeMeAdmin-MSI-${{ matrix.platform }}
+        path: collected-msi/*.msi
         if-no-files-found: warn
 
-    - name: Upload Local UI executable
-      uses: actions/upload-artifact@v4
-      with:
-        name: MakeMeAdmin-LocalUI-${{ matrix.platform }}-${{ matrix.configuration }}
-        path: UserRequestApp/bin/${{ matrix.configuration }} ${{ matrix.platform }}/
-        if-no-files-found: warn
-
-    - name: Upload Remote UI executable
-      uses: actions/upload-artifact@v4
-      with:
-        name: MakeMeAdmin-RemoteUI-${{ matrix.platform }}-${{ matrix.configuration }}
-        path: RemoteUI/bin/${{ matrix.configuration }} ${{ matrix.platform }}/
-        if-no-files-found: warn
-
-    - name: Upload MSI Installer
-      uses: actions/upload-artifact@v4
-      with:
-        name: MakeMeAdmin-Installer-${{ matrix.platform }}-${{ matrix.configuration }}
-        path: Installers/*.msi
-        if-no-files-found: warn
-
-  # Combined artifact with all builds
-  package:
+  release:
     needs: build
     runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
     steps:
-    - name: Download all artifacts
+    - name: Download all MSI artifacts
       uses: actions/download-artifact@v4
       with:
-        path: all-artifacts
+        pattern: MakeMeAdmin-MSI-*
+        path: release-files
+        merge-multiple: true
 
-    - name: Upload combined package
-      uses: actions/upload-artifact@v4
+    - name: Generate SHA256 checksums
+      run: |
+        cd release-files
+        sha256sum *.msi > sha256sum.txt
+        cat sha256sum.txt
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
       with:
-        name: MakeMeAdmin-All-Builds
-        path: all-artifacts/
+        files: |
+          release-files/*.msi
+          release-files/sha256sum.txt
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
