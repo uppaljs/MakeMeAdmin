@@ -1,0 +1,82 @@
+name: Build Make Me Admin
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+  workflow_dispatch:  # Allows manual trigger from GitHub UI
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    strategy:
+      matrix:
+        platform: [x86, x64]
+        configuration: [Release]
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v2
+
+    - name: Setup NuGet
+      uses: NuGet/setup-nuget@v2
+
+    - name: Restore NuGet packages
+      run: nuget restore MakeMeAdmin.sln
+
+    - name: Install WiX Toolset
+      run: |
+        choco install wixtoolset --version=3.14.1 -y
+        echo "C:\Program Files (x86)\WiX Toolset v3.14\bin" >> $env:GITHUB_PATH
+
+    - name: Build solution
+      run: msbuild MakeMeAdmin.sln /p:Configuration=${{ matrix.configuration }} /p:Platform="${{ matrix.platform }}" /t:Rebuild
+
+    - name: Upload Service executable
+      uses: actions/upload-artifact@v4
+      with:
+        name: MakeMeAdmin-Service-${{ matrix.platform }}-${{ matrix.configuration }}
+        path: Service/bin/${{ matrix.configuration }} ${{ matrix.platform }}/
+        if-no-files-found: warn
+
+    - name: Upload Local UI executable
+      uses: actions/upload-artifact@v4
+      with:
+        name: MakeMeAdmin-LocalUI-${{ matrix.platform }}-${{ matrix.configuration }}
+        path: UserRequestApp/bin/${{ matrix.configuration }} ${{ matrix.platform }}/
+        if-no-files-found: warn
+
+    - name: Upload Remote UI executable
+      uses: actions/upload-artifact@v4
+      with:
+        name: MakeMeAdmin-RemoteUI-${{ matrix.platform }}-${{ matrix.configuration }}
+        path: RemoteUI/bin/${{ matrix.configuration }} ${{ matrix.platform }}/
+        if-no-files-found: warn
+
+    - name: Upload MSI Installer
+      uses: actions/upload-artifact@v4
+      with:
+        name: MakeMeAdmin-Installer-${{ matrix.platform }}-${{ matrix.configuration }}
+        path: Installers/*.msi
+        if-no-files-found: warn
+
+  # Combined artifact with all builds
+  package:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: all-artifacts
+
+    - name: Upload combined package
+      uses: actions/upload-artifact@v4
+      with:
+        name: MakeMeAdmin-All-Builds
+        path: all-artifacts/
